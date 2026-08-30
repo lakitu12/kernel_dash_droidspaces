@@ -229,8 +229,13 @@ jobs:
             grep -q 'check_defconfig = "disabled"' common/BUILD.bazel || \
               sed -i '/name = "kernel_aarch64",/a\    check_defconfig = "disabled",' common/BUILD.bazel
             grep -B2 -A3 'check_defconfig' common/BUILD.bazel || true
-            # NOTE: no --config=stamp -> KMI stamp disabled, no BRANCH/KMI_GENERATION
-            # env needed; version comes out as 6.6.118-droidspaces-lakitu.
+            # NOTE: no --config=stamp -> Kleaf inserts a literal "-maybe-dirty"
+            # placeholder into the version string; the KMI tail "-android15-8"
+            # is still injected by the build-config chain (BRANCH/KMI_GENERATION
+            # env). OBSERVED (run 33304453206):
+            #   6.6.118-android15-8-maybe-dirty-droidspaces-lakitu
+            # Cosmetic only: MODVERSIONS same_magic() skips the first vermagic
+            # token; vendor module matching is by CRC/flags, not this string.
             tools/bazel build \
               --config=fast \
               --disk_cache=/home/runner/.cache/bazel \
