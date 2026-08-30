@@ -158,6 +158,23 @@ jobs:
           ensure_y KALLSYMS
           ensure_y KALLSYMS_ALL
 
+          # MODULE_SIG_PROTECT MUST be disabled for GKI 3.0 (android15-6.6).
+          # Stock=y works because Google's module-signing key is compiled into
+          # the stock trusted ring. A self-built kernel only trusts its own
+          # kleaf-internal key, so every Google-signed system_dlkm module that
+          # EXPORTS a protected symbol (rfkill, bluetooth, mii, ppp*, usbnet,
+          # virtio*, can*, ...) is refused with "exports protected symbol"
+          # (EACCES, silent at boot) -> cfg80211 "Unknown symbol rfkill_alloc"
+          # -> WiFi + BT dead. Observed & isolated on dash 2026-08-30 (8021q/
+          # gzvm load fine - their exports are unprotected; insmod rfkill/mii
+          # refused even in permissive). Stock's trust path cannot be replicated
+          # (no access to Google's signing cert chain); WildKernels' equivalent
+          # is stripping protected exports. Minimal fix: turn the gate off.
+          # No task_struct/ABI/CRC impact (module.c load-time policy only).
+          sed -i 's/^CONFIG_MODULE_SIG_PROTECT=y/# CONFIG_MODULE_SIG_PROTECT is not set/' "$DEFCONFIG"
+          grep -q "^# CONFIG_MODULE_SIG_PROTECT is not set" "$DEFCONFIG" || { echo "::error::failed to disable MODULE_SIG_PROTECT"; exit 1; }
+          echo "MODULE_SIG_PROTECT disabled (system_dlkm protected-symbol gate off)"
+
           # LTO/CFI MUST match the stock kernel environment or vendor_dlkm modules
           # fail to load -> bootloop (marble lesson, validated both ways).
           # dash stock ikconfig ground truth: CONFIG_LTO_NONE=y + CONFIG_CFI_CLANG=y.
@@ -269,6 +286,8 @@ jobs:
           # LTO/CFI must equal stock environment (LTO_NONE=y + CFI_CLANG=y)
           grep -q "^CONFIG_LTO_NONE=y$" /tmp/built-config || { echo "::error::LTO drifted from stock LTO_NONE - vendor_dlkm CRC mismatch risk"; exit 1; }
           grep -q "^CONFIG_CFI_CLANG=y$" /tmp/built-config || { echo "::error::CFI drifted from stock"; exit 1; }
+          # WiFi/BT lifeline: protected-symbol gate must stay OFF (see defconfig step)
+          grep -q "^# CONFIG_MODULE_SIG_PROTECT is not set" /tmp/built-config || grep -q "^CONFIG_MODULE_SIG_PROTECT=" /tmp/built-config && { echo "::error::MODULE_SIG_PROTECT must be off (system_dlkm protected-symbol refusal)"; exit 1; }
           if [ "${{ matrix.variant }}" = "ksu" ]; then
             grep -q "^CONFIG_KSU=y$" /tmp/built-config || { echo "::error::KSU missing in ksu build"; exit 1; }
             grep -q "^CONFIG_KPM=y$" /tmp/built-config || { echo "::error::KPM missing in ksu build"; exit 1; }
