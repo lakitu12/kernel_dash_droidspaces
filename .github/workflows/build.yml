@@ -287,7 +287,7 @@ jobs:
           grep -q "^CONFIG_LTO_NONE=y$" /tmp/built-config || { echo "::error::LTO drifted from stock LTO_NONE - vendor_dlkm CRC mismatch risk"; exit 1; }
           grep -q "^CONFIG_CFI_CLANG=y$" /tmp/built-config || { echo "::error::CFI drifted from stock"; exit 1; }
           # WiFi/BT lifeline: protected-symbol gate must stay OFF (see defconfig step)
-          grep -q "^# CONFIG_MODULE_SIG_PROTECT is not set" /tmp/built-config || grep -q "^CONFIG_MODULE_SIG_PROTECT=" /tmp/built-config && { echo "::error::MODULE_SIG_PROTECT must be off (system_dlkm protected-symbol refusal)"; exit 1; }
+          grep -q "^# CONFIG_MODULE_SIG_PROTECT is not set" /tmp/built-config || { echo "::error::MODULE_SIG_PROTECT must be off (system_dlkm protected-symbol refusal)"; exit 1; }
           if [ "${{ matrix.variant }}" = "ksu" ]; then
             grep -q "^CONFIG_KSU=y$" /tmp/built-config || { echo "::error::KSU missing in ksu build"; exit 1; }
             grep -q "^CONFIG_KPM=y$" /tmp/built-config || { echo "::error::KPM missing in ksu build"; exit 1; }
