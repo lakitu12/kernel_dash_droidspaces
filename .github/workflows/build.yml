@@ -66,13 +66,15 @@ jobs:
           SUB=$(grep -E "^[[:space:]]*SUBLEVEL" "$KD/Makefile" | head -n1)
           echo "Makefile $SUB | common HEAD: $(git -C "$KD" log --oneline -1 || echo n/a)"
           echo "$SUB" | grep -Eq "SUBLEVEL[[:space:]]*=[[:space:]]*118" || { echo "::error::kernel source is not 6.6.118 (got: $SUB) - manifest pin broken"; exit 1; }
-          # Version string: .scmversion is DEAD on 6.x (scripts/setlocalversion no longer
-          # reads it; upstream dropped it in 5.16). Deterministic suffix via
-          # CONFIG_LOCALVERSION instead: this yields
-          #   6.6.118-android15-8-droidspaces-lakitu
-          # because BRANCH=android15-6.6 + KMI_GENERATION=8 are injected by the build
-          # system via KERNELRELEASE (build.config.common: BRANCH/KMI_GENERATION).
+          # Version string: .scmversion is DEAD on 6.x (scripts/setlocalversion no
+          # longer reads it; upstream dropped it in 5.16). Deterministic suffix via
+          # CONFIG_LOCALVERSION + LOCALVERSION_AUTO off (else setlocalversion appends
+          # -g<sha>/-dirty after it under the kleaf git checkout). Final version:
+          #   6.6.118[-droidspaces-lakitu][-android15-8]
+          # (-android15-8 comes from BRANCH/KMI_GENERATION env, injected by the
+          # build config chain under kleaf the same way as legacy build.sh)
           echo 'CONFIG_LOCALVERSION="-droidspaces-lakitu"' >> "$KD/arch/arm64/configs/gki_defconfig"
+          echo '# CONFIG_LOCALVERSION_AUTO is not set' >> "$KD/arch/arm64/configs/gki_defconfig"
 
       - name: Apply DroidSpaces kABI patches (GKI 6.6 = below-6.12 set)
         run: |
@@ -214,25 +216,43 @@ jobs:
           free -h
 
           cd ~/gki
-          # Disable KMI strict check for CI (kABI patches shift some CRCs by design)
-          sed -i 's/KMI_SYMBOL_LIST_STRICT_MODE=1/KMI_SYMBOL_LIST_STRICT_MODE=0/' common/build.config.gki.aarch64 || true
-
-          set -o pipefail
-          KMI_SYMBOL_LIST_STRICT_MODE=0 BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh -j2 2>&1 | tee build.log
+          # KMI strict check off for CI (kABI patches shift some CRCs by design).
+          # build/build.sh does NOT exist on android15-6.6 manifests (legacy build
+          # removed; kleaf/bazel is the only path) -> follow WildKernels' split:
+          # patch check_defconfig into common/BUILD.bazel, then tools/bazel build.
+          if [ -f build/build.sh ]; then
+            sed -i 's/KMI_SYMBOL_LIST_STRICT_MODE=1/KMI_SYMBOL_LIST_STRICT_MODE=0/' common/build.config.gki.aarch64 || true
+            set -o pipefail
+            KMI_SYMBOL_LIST_STRICT_MODE=0 BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh -j2 2>&1 | tee build.log
+          else
+            # Disable the savedefconfig gate in kleaf (fragment appended, not sorted).
+            grep -q 'check_defconfig = "disabled"' common/BUILD.bazel || \
+              sed -i '/name = "kernel_aarch64",/a\    check_defconfig = "disabled",' common/BUILD.bazel
+            grep -B2 -A3 'check_defconfig' common/BUILD.bazel || true
+            # NOTE: no --config=stamp -> KMI stamp disabled, no BRANCH/KMI_GENERATION
+            # env needed; version comes out as 6.6.118-droidspaces-lakitu.
+            tools/bazel build \
+              --config=fast \
+              --disk_cache=/home/runner/.cache/bazel \
+              //common:kernel_aarch64/Image 2>&1 | tee build.log
+          fi
           echo "=== Build finished ==="
-          ls -lh out/android15-6.6/dist/ 2>/dev/null || ls -lh out/*/dist/
+          find . -path ./out -prune -o -name "Image" -path "*kernel_aarch64*" -print 2>/dev/null
+          ls -lh bazel-bin/common/kernel_aarch64/Image 2>/dev/null || true
 
       - name: Version gate + ikconfig assertions (${{ matrix.variant }})
         run: |
           set -e
-          DIST=$(find ~/gki/out -type d -name dist | head -n1)
-          KVER=$(strings "$DIST/Image" | grep -m1 "Linux version 6")
+          IMG=~/gki/bazel-bin/common/kernel_aarch64/Image
+          [ -f "$IMG" ] || IMG=$(find ~/gki -name Image -path "*kernel_aarch64*" -not -path "*/dist/*" | head -n1)
+          [ -f "$IMG" ] || { echo "::error::Image not found after build"; exit 1; }
+          KVER=$(strings "$IMG" | grep -m1 "Linux version 6")
           echo "kernel: $KVER"
-          echo "$KVER" | grep -q "6.6.118-android15-8-droidspaces-lakitu" || { echo "::error::version drifted: $KVER"; exit 1; }
+          echo "$KVER" | grep -Eq "^Linux version 6\.6\.118.*droidspaces-lakitu" || { echo "::error::version drifted: $KVER"; exit 1; }
 
           CFG=$GITHUB_WORKSPACE/.github/scripts/extract-ikconfig
           chmod +x "$CFG"
-          "$CFG" "$DIST/Image" > /tmp/built-config
+          "$CFG" "$IMG" > /tmp/built-config
           grep -E "CONFIG_SYSVIPC=|CONFIG_POSIX_MQUEUE=|CONFIG_IPC_NS=|CONFIG_PID_NS=|CONFIG_DEVTMPFS=" /tmp/built-config
           # LTO/CFI must equal stock environment (LTO_NONE=y + CFI_CLANG=y)
           grep -q "^CONFIG_LTO_NONE=y$" /tmp/built-config || { echo "::error::LTO drifted from stock LTO_NONE - vendor_dlkm CRC mismatch risk"; exit 1; }
@@ -248,9 +268,9 @@ jobs:
           fi
           mkdir -p /tmp/ak3-images
           if [ "${{ matrix.variant }}" = "ksu" ]; then
-            cp -v "$DIST/Image" /tmp/ak3-images/Image-ksu
+            cp -v "$IMG" /tmp/ak3-images/Image-ksu
           else
-            cp -v "$DIST/Image" /tmp/ak3-images/Image-bypass
+            cp -v "$IMG" /tmp/ak3-images/Image-bypass
           fi
 
       - name: Prepare AnyKernel3 (${{ matrix.variant }})
