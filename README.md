@@ -25,28 +25,6 @@ DroidSpaces（宿主容器）+ SukiSU Ultra（KPM + SUSFS）。仓库结构/方�
 `c44b714366cc` 本身不在 AOSP common 上（MTK fork 内部提交），但 base tag 锁
 `android15-6.6-2026-01_r1`（同为 6.6.118）。
 
-## "小米 6.6/6.12 不能直接刷 GKI" 传言考证
-
-**结论：传言把三类真实失败混为一谈，6.6 设备刷自建 GKI 内核是成熟路线
-（WildKernels 对 android15-6.6 有完整 release 矩阵；官方 DroidSpaces 文档
-明确支持 5.4–6.12+），dash 这台没有任何结构性障碍。**
-
-| 传言里的"不能刷" | 真实原因 | 对 dash |
-|---|---|---|
-| 刷官方 GKI boot（如 KernelSU GKI 包）不开机 | 官方 GKI 是 AOSP 全量内核 + GKI 模块（新 Android 15/16 设备拆到 `system_dlkm`/`vendor_kernel_boot`，还带 Google 签名/MODULE_SIG_PROTECT），直接刷与设备系统不配套 | **不刷官方 boot**，只替换 boot 内的 kernel 载荷（AK3 split_boot），ramdisk/vendor_boot 一律不动；本内核配置贴 stock ikconfig |
-| 5.10 时代"必须 LTO_THIN 不能 LTO_NONE" | marble stock 是 LTO_FULL+CFI，LTO_NONE 改变 codegen → vendor_dlkm CRC 失配 → 无限重启（实测两轮） | dash stock 本来就是 **LTO_NONE** → 照抄 stock 反而最安全；CFI 保持 =y |
-| 开 SYSVIPC 等就 brick | kABI：task_struct 偏移变了 vendor 模块即崩 | DroidSpaces 官方 kABI 补丁（6.6 用 below-6.12 的 `001..._6_7_8` 变体，走 `ANDROID_KABI_RESERVE` padding，dash 有保留区）+ 仅启用官方认证的 GKI-safe 配置集 |
-
-真正的 dash 特有风险与对策（workflow 已内置）：
-
-1. **KMI 尾缀 `-android15-8` 必须保持**：vermagic 首段不参与 MODVERSIONS 匹配，
-   但 KMI 8 的符号列表/CRC 环境必须与 stock 一致 → 钉 2026-01_r1 tag。
-2. **MTK fork 漂移**：`abogki519650608` 与 AOSP tag 之间的差异不可枚举 →
-   靠 ikconfig 断言（LTO_NONE/CFI/SYSVIPC…）+ 首次刷机守 A/B 槽回退。
-3. **MODULE_SIG_PROTECT=y**：内核自身签名保护仅约束加载 GKI 模块
-   （system_dlkm 场景）；本路线不动 system_dlkm/vendor_dlkm，无需处理。
-4. **system_dlkm/vendor_kernel_boot**：GKI 3.0 新分区，本路线完全不触碰。
-
 ## Workflow
 
 `.github/workflows/build.yml`（marble 模板改造，差异点见文件内注释）：

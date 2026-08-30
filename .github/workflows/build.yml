@@ -7,7 +7,6 @@ on:
     paths:
       - '.github/workflows/build.yml'
       - '.github/scripts/**'
-      - 'README.md'
 
 jobs:
   build:
