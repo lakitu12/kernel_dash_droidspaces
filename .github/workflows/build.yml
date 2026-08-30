@@ -66,15 +66,23 @@ jobs:
           SUB=$(grep -E "^[[:space:]]*SUBLEVEL" "$KD/Makefile" | head -n1)
           echo "Makefile $SUB | common HEAD: $(git -C "$KD" log --oneline -1 || echo n/a)"
           echo "$SUB" | grep -Eq "SUBLEVEL[[:space:]]*=[[:space:]]*118" || { echo "::error::kernel source is not 6.6.118 (got: $SUB) - manifest pin broken"; exit 1; }
-          # Version string: .scmversion is DEAD on 6.x (scripts/setlocalversion no
-          # longer reads it; upstream dropped it in 5.16). Deterministic suffix via
-          # CONFIG_LOCALVERSION + LOCALVERSION_AUTO off (else setlocalversion appends
-          # -g<sha>/-dirty after it under the kleaf git checkout). Final version:
-          #   6.6.118[-droidspaces-lakitu][-android15-8]
-          # (-android15-8 comes from BRANCH/KMI_GENERATION env, injected by the
-          # build config chain under kleaf the same way as legacy build.sh)
-          echo 'CONFIG_LOCALVERSION="-droidspaces-lakitu"' >> "$KD/arch/arm64/configs/gki_defconfig"
+          # Version string: .scmversion is DEAD on 6.x and kleaf replaces
+          # scripts/setlocalversion with its own localversion rule (kleaf/impl/
+          # stamp.bzl). Without --config=stamp it emits the literal "-maybe-dirty".
+          # Fix at the source: patch that echo to our suffix and do NOT set
+          # CONFIG_LOCALVERSION (it would be appended AFTER the file content).
+          # OBSERVED (run 33304453206) file content = "-android15-8-maybe-dirty"
+          # (KMI tail comes from the same file) -> after patch:
+          #   6.6.118-android15-8-droidspaces-lakitu
           echo '# CONFIG_LOCALVERSION_AUTO is not set' >> "$KD/arch/arm64/configs/gki_defconfig"
+          # Patch kleaf no-stamp version source: build/kleaf/impl/stamp.bzl emits
+          # literal "-maybe-dirty" when --config=stamp is absent; replace with our
+          # suffix (this file ALSO carries the -android15-8 KMI tail).
+          STAMP_BZL=~/gki/build/kleaf/impl/stamp.bzl
+          [ -f "$STAMP_BZL" ] || STAMP_BZL=$(find ~/gki/build -name stamp.bzl -path "*kleaf*" 2>/dev/null | head -n1)
+          [ -f "$STAMP_BZL" ] || { echo "::error::kleaf stamp.bzl not found"; exit 1; }
+          sed -i "s/echo '-maybe-dirty'/echo '-droidspaces-lakitu'/" "$STAMP_BZL"
+          grep -n "droidspaces-lakitu\|maybe-dirty" "$STAMP_BZL" || true
 
       - name: Apply DroidSpaces kABI patches (GKI 6.6 = below-6.12 set)
         run: |
@@ -285,9 +293,11 @@ jobs:
           # Base: Numbersf/AnyKernel3 (SukiSU-Ultra main maintainer) - uppercase var
           # convention (BLOCK/IS_SLOT_DEVICE/NO_MAGISK_CHECK) that the SukiSU app
           # flasher expects. Lowercase osm0sis style was silently ignored by the
-          # app flasher ("flash failed, no details"). dash boot.img:
-          # HEADER_VER 4 / KERNEL_FMT lz4 / RAMDISK_SZ 0 -> raw Image, no ramdisk
-          # in boot (GKI 2.0 style; ramdisk lives in vendor_boot) -> flash_boot path.
+          # app flasher ("flash failed, no details"). dash boot layout (GKI 3.0):
+          # HEADER_VER 4 / KERNEL_FMT lz4 / RAMDISK_SZ 0 -> boot carries ONLY the
+          # kernel; the generic ramdisk lives on init_boot, device ramdisk +
+          # vendor ramdisk on vendor_boot. AK3 flash_boot replaces the kernel
+          # payload only and repacks the (empty-ramdisk) boot image untouched.
           git clone --depth=1 -q https://github.com/Numbersf/AnyKernel3 /tmp/AnyKernel3-template
           cat > /tmp/ak3-anykernel.sh <<'AKSH'
           ### AnyKernel3 Ramdisk Mod Script
@@ -325,8 +335,8 @@ jobs:
           sleep 0.5
           chmod -R 755 $AKHOME/tools
 
-          ui_print " Installing dash GKI kernel..."
-          ui_print " Splitting boot, replacing kernel (ramdisk stays in vendor_boot)"
+          ui_print " Installing dash GKI 6.6.118 kernel (DroidSpaces + SukiSU Ultra)"
+          ui_print " Boot holds kernel only; init_boot / vendor_boot stay untouched"
 
           split_boot
           if [ -f "split_img/ramdisk.cpio" ]; then
@@ -336,7 +346,7 @@ jobs:
               flash_boot
           fi
 
-          ui_print " Done. Stock ramdisk untouched (lives in vendor_boot)."
+          ui_print " Done. Kernel swapped; init_boot and vendor_boot untouched."
           AKSH
           if [ "${{ matrix.variant }}" = "ksu" ]; then
             IMG=/tmp/ak3-images/Image-ksu

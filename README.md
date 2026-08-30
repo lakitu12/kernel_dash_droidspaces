@@ -11,7 +11,7 @@ DroidSpaces（宿主容器）+ SukiSU Ultra（KPM + SUSFS）。仓库结构/方�
 | 项 | 值 | 来源 |
 |---|---|---|
 | 内核版本 | `6.6.118-android15-8-gc44b714366cc-abogki519650608-4k` | extract-ikconfig + strings，本地 stock boot.img |
-| GKI 代 | **GKI 3.0**（boot.img header v4, RAMDISK_SZ=0, kernel LZ4） | magiskboot 头解析 |
+| GKI 代 | **GKI 3.0**（boot.img header v4, RAMDISK_SZ=0 → boot 仅含内核, kernel LZ4；generic ramdisk 在 **init_boot** 分区） | magiskboot 头解析 |
 | `abogki` 前缀 | MTK 用 AOSP GKI 产物做的 fork 构建 | 版本字符串 |
 | KMI | `android15-8`（KMI generation 8） | 版本字符串 |
 | page size | 4K（`CONFIG_ARM64_PAGE_SHIFT=12`，`-4k` 后缀） | ikconfig |
@@ -56,11 +56,15 @@ DroidSpaces（宿主容器）+ SukiSU Ultra（KPM + SUSFS）。仓库结构/方�
 - DroidSpaces kABI 补丁 `001.GKI-below-6.12-fix_sysvipc_kabi_6_7_8.patch`
   （6.6 属 below-6.12；无 002 MQUEUE 补丁——那是 ≤5.10 专属）
 - gki_defconfig：官方 GKI-safe 集 + KPROBES/KALLSYMS；**LTO/CFI 保持 stock**
-- 版本尾巴：`.scmversion` 在 6.x 已死（setlocalversion 不再读）→ 改
-  `CONFIG_LOCALVERSION="-droidspaces-lakitu"` → `6.6.118-android15-8-droidspaces-lakitu`
+- 版本尾巴：`.scmversion` 在 6.x 已死（setlocalversion 不再读）→ kleaf 无 stamp
+  构建时 `build/kleaf/impl/stamp.bzl` 生成 literal `-maybe-dirty`，workflow 直接
+  sed 该文件为 `-droidspaces-lakitu` → `6.6.118-android15-8-droidspaces-lakitu`
+  （KMI 尾巴 `-android15-8` 由同一文件携带；`CONFIG_LOCALVERSION` 反而会拼在
+  文件内容之后，不用）
 - SukiSU builtin 分支（SUSFS 符号必需）+ susfs4ksu `gki-android15-6.6`
   分支补丁（已核实存在）
-- AK3：Numbersf 大写变量基底；dash boot 无 ramdisk → `flash_boot` 路径
+- AK3：Numbersf 大写变量基底；dash boot 仅含 kernel（generic ramdisk 在 init_boot、
+  vendor ramdisk 在 vendor_boot）→ `flash_boot` 只换内核、init_boot/vendor_boot 不动
 - 产物：matrix `ksu` / `bypass` 双变体，Image + AK3 zip
 
 ## 首刷安全规程（A/B 守护，同 marble）
