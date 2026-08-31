@@ -116,10 +116,12 @@ jobs:
           F=$(grep -rl "define PID_MAX_LIMIT" "$KDIR" --include="*.h" | head -n1)
           if [ -n "$F" ]; then
             echo "patching $F"
-            perl -0777 -i -pe 's/#define PID_MAX_LIMIT\s*\\\n.*?PID_MAX_DEFAULT\)\)/#define PID_MAX_LIMIT 32768/s' "$F"
-            grep -n "PID_MAX_LIMIT" "$F"
-            echo "header patch check:"
+            echo "before:"; sed -n '34,36p' "$F" | cat -A
+            perl -0777 -i -pe 's/#define PID_MAX_LIMIT.*PID_MAX_DEFAULT\)\)/#define PID_MAX_LIMIT 32768/s' "$F"
+            echo "after:"; grep -n "PID_MAX_LIMIT" "$F"
             sed -n '/PID_MAX_LIMIT/,+2p' "$F" | head -n 5
+            # also show surrounding bytes
+            grep -c "32768" "$F" && echo "header patched ok" || echo "header patch FAILED"
           else
             echo "::warning::PID_MAX_LIMIT not found"
           fi
@@ -129,6 +131,10 @@ jobs:
             grep -n "pid_max_max" "$KDIR/kernel/pid.c" | head
           fi
           echo "pid_max clamp done (nomask can stay RW, MKP 0x8000 never hit)"
+          echo "=== sysctl pid_max table ==="
+          grep -rn "pid_max" "$KDIR" --include="*.c" -A2 -B2 | head -n 60 || true
+          echo "=== threads.h final ==="
+          cat "$F" | grep -A2 -B2 "PID_MAX_LIMIT" | head -n 10
 
       - name: Patch gki_defconfig for DroidSpaces
         run: |
