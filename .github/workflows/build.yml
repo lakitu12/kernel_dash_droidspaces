@@ -112,11 +112,21 @@ jobs:
           cd ~/gki
           if [ -d common ]; then KDIR=common; elif [ -d kernel/common ]; then KDIR=kernel/common; else KDIR=$(find . -name "Kconfig" -path "*/arch/arm64/*" | head -n1 | xargs dirname | xargs dirname | xargs dirname); fi
           echo "KDIR=$KDIR"
-          # 1) header: PID_MAX_LIMIT -> 32768 (covers PIDNS_REQUIRED extra2)
+          # 1) header: PID_MAX_LIMIT -> 32768 (multiline macro, must replace whole block)
           F=$(grep -rl "define PID_MAX_LIMIT" "$KDIR" --include="*.h" | head -n1)
           if [ -n "$F" ]; then
             echo "patching $F"
-            sed -i 's/^#define PID_MAX_LIMIT.*/#define PID_MAX_LIMIT 32768/' "$F"
+            export F
+            python3 << 'PY'
+            import re, pathlib, os
+            p = pathlib.Path(os.environ["F"])
+            t = p.read_text()
+            # Replace the 3-line macro with single line
+            t = re.sub(r'#define PID_MAX_LIMIT\s*\\\n.*?PID_MAX_DEFAULT\)\)', '#define PID_MAX_LIMIT 32768', t, flags=re.DOTALL)
+            p.write_text(t)
+            # Verify no leftover continuation
+            print(open(os.environ["F"]).read().split("PID_MAX_LIMIT")[1][:200])
+            PY
             grep -n "PID_MAX_LIMIT" "$F"
           else
             echo "::warning::PID_MAX_LIMIT not found"
