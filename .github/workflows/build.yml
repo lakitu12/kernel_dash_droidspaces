@@ -106,6 +106,28 @@ jobs:
 
           git diff --stat || true
 
+      - name: Clamp pid_max to 32768 (MKP mitigation, keep nomask RW)
+        run: |
+          set -e
+          cd ~/gki
+          if [ -d common ]; then KDIR=common; elif [ -d kernel/common ]; then KDIR=kernel/common; else KDIR=$(find . -name "Kconfig" -path "*/arch/arm64/*" | head -n1 | xargs dirname | xargs dirname | xargs dirname); fi
+          echo "KDIR=$KDIR"
+          # 1) header: PID_MAX_LIMIT -> 32768 (covers PIDNS_REQUIRED extra2)
+          F=$(grep -rl "define PID_MAX_LIMIT" "$KDIR" --include="*.h" | head -n1)
+          if [ -n "$F" ]; then
+            echo "patching $F"
+            sed -i 's/^#define PID_MAX_LIMIT.*/#define PID_MAX_LIMIT 32768/' "$F"
+            grep -n "PID_MAX_LIMIT" "$F"
+          else
+            echo "::warning::PID_MAX_LIMIT not found"
+          fi
+          # 2) pid.c: pid_max_max -> 32768 (hard clamp, survives header re-define)
+          if grep -q "pid_max_max" "$KDIR/kernel/pid.c"; then
+            sed -i 's/int pid_max_max.*=.*/int pid_max_max = 32768;/' "$KDIR/kernel/pid.c"
+            grep -n "pid_max_max" "$KDIR/kernel/pid.c" | head
+          fi
+          echo "pid_max clamp done (nomask can stay RW, MKP 0x8000 never hit)"
+
       - name: Patch gki_defconfig for DroidSpaces
         run: |
           set -e
