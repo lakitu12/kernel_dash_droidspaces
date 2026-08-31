@@ -116,18 +116,10 @@ jobs:
           F=$(grep -rl "define PID_MAX_LIMIT" "$KDIR" --include="*.h" | head -n1)
           if [ -n "$F" ]; then
             echo "patching $F"
-            export F
-            python3 << 'PY'
-            import re, pathlib, os
-            p = pathlib.Path(os.environ["F"])
-            t = p.read_text()
-            # Replace the 3-line macro with single line
-            t = re.sub(r'#define PID_MAX_LIMIT\s*\\\n.*?PID_MAX_DEFAULT\)\)', '#define PID_MAX_LIMIT 32768', t, flags=re.DOTALL)
-            p.write_text(t)
-            # Verify no leftover continuation
-            print(open(os.environ["F"]).read().split("PID_MAX_LIMIT")[1][:200])
-            PY
+            perl -0777 -i -pe 's/#define PID_MAX_LIMIT\s*\\\n.*?PID_MAX_DEFAULT\)\)/#define PID_MAX_LIMIT 32768/s' "$F"
             grep -n "PID_MAX_LIMIT" "$F"
+            echo "header patch check:"
+            sed -n '/PID_MAX_LIMIT/,+2p' "$F" | head -n 5
           else
             echo "::warning::PID_MAX_LIMIT not found"
           fi
