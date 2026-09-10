@@ -252,8 +252,12 @@ jobs:
           # HEAD@3f0b811 (2026-09-06) added `ksu_install_su_fd()` into the fs/exec.c
           # hook, but NO SukiSU builtin commit (4.1.3 or 4.2.0) implements that symbol
           # -> ld.lld "undefined symbol: ksu_install_su_fd" at vmlinux link (~18min).
-          # Pin 937215c = branch HEAD when run #11 (2026-08-31) went green.
-          SUSFS_PIN=937215cb3a1b1f333d764c366c7a49972fa8e7a0
+          # Frontier search (2026-09-10): 937215c..8224c73 touches ONLY
+          # KernelSU/10_enable_susfs_for_ksu.patch (never applied by this workflow -
+          # we use the SukiSU builtin tree), so consumed files are byte-identical to
+          # the run #11/#14-verified state; 8224c73 = latest feasible before
+          # 3f0b811's ksu_install_su_fd demand (missing from ALL builtin commits).
+          SUSFS_PIN=8224c73ba76fbfbcbfc1fe0c16970fbd9baad2e0
           git clone -q https://gitlab.com/simonpunk/susfs4ksu.git -b gki-android15-6.6 /tmp/susfs4ksu
           git -C /tmp/susfs4ksu checkout -q "$SUSFS_PIN"
           # Fail-fast #2: kernel-side patch must not reference driver symbols the pinned
