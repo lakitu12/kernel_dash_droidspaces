@@ -227,8 +227,24 @@ jobs:
           # PIN builtin branch: it defines KSU_SUSFS* Kconfig symbols + KSU-side SUSFS impl.
           # No-arg setup.sh checks out latest release tag (main-based) which LACKS SUSFS symbols
           # -> all 10 KSU_SUSFS defconfig entries silently dropped by kconfig (marble lesson).
-          curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s builtin
+          # DRIFT GUARD (run 34441463481, 2026-09-10): floating `builtin` branch broke.
+          # builtin@e2912817f4 (v4.2.0, 2026-09-01 "Sync with official KernelSU main")
+          # deleted kernel_umount_feature_set() but LEFT `.set_handler =
+          # kernel_umount_feature_set` -> clang "use of undeclared identifier" at
+          # drivers/kernelsu/ksu.c after ~12 min of kernel build. Run #11 was green on
+          # the SHA below (observed: v4.1.3-6c5603f0@builtin). Pin it; unpin only after
+          # upstream fixes feature/kernel_umount.c on builtin.
+          KSU_PIN=6c5603f0c853a94256940273efc433cbbc85f57a
+          curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s "$KSU_PIN"
           ls -l common/drivers/kernelsu
+          # Fail-fast static guard against dangling feature handlers (catch upstream
+          # breakage in seconds instead of burning ~12 min of build):
+          KU=common/drivers/kernelsu/feature/kernel_umount.c
+          if grep -q '\.set_handler = kernel_umount_feature_set' "$KU" && ! grep -q 'static int kernel_umount_feature_set' "$KU"; then
+            echo "::error::SukiSU $KSU_PIN: kernel_umount.c references missing kernel_umount_feature_set() - upstream compile breakage, re-pin a good builtin commit"
+            exit 1
+          fi
+          echo "kernel_umount.c handler refs OK"
 
           # SUSFS kernel-side files + GKI patch. Branch gki-android15-6.6 EXISTS
           # (verified: 50_add_susfs_in_gki-android15-6.6.patch present, HTTP 200).
@@ -260,7 +276,7 @@ jobs:
 
       - name: Build GKI kernel
         run: |
-          set -e
+          set -eo pipefail
           # Swap margin (harmless without LTO; keeps pahole/BTF steps safe)
           sudo swapoff -a 2>/dev/null || true
           sudo fallocate -l 12G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=12288
