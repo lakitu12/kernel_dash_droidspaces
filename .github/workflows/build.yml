@@ -381,7 +381,26 @@ jobs:
           # kernel; the generic ramdisk lives on init_boot, device ramdisk +
           # vendor ramdisk on vendor_boot. AK3 flash_boot replaces the kernel
           # payload only and repacks the (empty-ramdisk) boot image untouched.
-          git clone --depth=1 -q https://github.com/Numbersf/AnyKernel3 /tmp/AnyKernel3-template
+          # DRIFT GUARD #3 (2026-09-12 brick forensics): this template clone was the
+          # THIRD floating upstream. run #11 (2026-08-31, boots on dash) resolved it to
+          # 0fc75698 (2026-08-10); by 2026-09-10 HEAD had moved to 47f23f7ec "v31.0
+          # beta!" (2026-09-04) whose magiskboot (910,296 B vs 788,840 B) and
+          # magiskpolicy differ. That is the ONLY change shared by BOTH variants on
+          # 9/10 (KSU & SUSFS pins were byte-identical r14 vs r15; the bypass Image is
+          # byte-identical r11 vs r14 except the build-time module-key cert blob), and
+          # it is exactly the window the user reports: 8/31 build boots, 9/10 builds
+          # kernel-panic in BOTH ksu and bypass. Pin to the boot-verified commit; the
+          # v31 toolchain must not re-enter silently - upgrade only after a real-device
+          # flash test.
+          AK3_PIN=0fc7569866bb5d5fe51752cc410dca3e92ab332f
+          git clone -q https://github.com/Numbersf/AnyKernel3 /tmp/AnyKernel3-template
+          git -C /tmp/AnyKernel3-template checkout -q "$AK3_PIN"
+          echo "AK3 pinned $(git -C /tmp/AnyKernel3-template rev-parse --short HEAD)"
+          # Static guard: tool binaries must match the 8/31 boot-verified bytes
+          [ "$(stat -c%s /tmp/AnyKernel3-template/tools/magiskboot)" = "788840" ] \
+            || { echo "::error::AK3@$(git -C /tmp/AnyKernel3-template rev-parse --short HEAD) magiskboot size != 788840 (0fc75698 known-good)"; exit 1; }
+          [ "$(stat -c%s /tmp/AnyKernel3-template/tools/magiskpolicy)" = "356584" ] \
+            || { echo "::error::AK3 magiskpolicy size != 356584 (0fc75698 known-good)"; exit 1; }
           cat > /tmp/ak3-anykernel.sh <<'AKSH'
           ### AnyKernel3 Ramdisk Mod Script
           ## dash GKI 6.6 by lakitu12 (template: Numbersf/AnyKernel3, SukiSU app-compatible)
