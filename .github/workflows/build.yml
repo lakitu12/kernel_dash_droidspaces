@@ -373,9 +373,11 @@ jobs:
         run: |
           set -e
           mkdir -p /tmp/artifacts
-          # Base: Numbersf/AnyKernel3 (SukiSU-Ultra main maintainer) - uppercase var
-          # convention (BLOCK/IS_SLOT_DEVICE/NO_MAGISK_CHECK) that the SukiSU app
-          # flasher expects. Lowercase osm0sis style was silently ignored by the
+          # Base: Numbersf/AnyKernel3 - third-party community fork (upstream:
+          # Kernel-SU/AnyKernel3). NOT SukiSU-Ultra org staff (verified 2026-09-12:
+          # org has 4 members, Numbersf not among them; known for Action-Build).
+          # Uses the uppercase var convention (BLOCK/IS_SLOT_DEVICE/NO_MAGISK_CHECK)
+          # that the SukiSU app flasher expects. Lowercase osm0sis style was silently ignored by the
           # app flasher ("flash failed, no details"). dash boot layout (GKI 3.0):
           # HEADER_VER 4 / KERNEL_FMT lz4 / RAMDISK_SZ 0 -> boot carries ONLY the
           # kernel; the generic ramdisk lives on init_boot, device ramdisk +
