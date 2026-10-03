@@ -1,0 +1,19 @@
+config TRUSTY_RESCUE
+	bool "Self-guarded trusty-virtio camera-chain rescue (gz-erased boots)"
+	depends on OF
+	default y
+	help
+	  When the GenieZone/Trusty firmware partition is erased so the kernel
+	  boots at EL2 (kvm-arm.mode=nvhe, for pKVM VMs), gz_trusty_mod's probe
+	  fails its SMC version handshake and never populates /trusty/trusty-virtio.
+	  The secure-cmdq mailbox and the whole imgsys/IMGSCP camera chain then
+	  defer forever and camerahalserver crash-loops.
+
+	  This driver waits for vendor_dlkm modules to settle; if (and only if)
+	  the trusty-virtio driver is registered but its device is absent (the
+	  gz-erased fingerprint), it unregisters the crash-prone virtio driver,
+	  creates the marker device and kicks deferred probes, restoring normal
+	  camera operation under nVHE.
+
+	  Say N to exclude; the rescue is fully self-guarded and a no-op when
+	  gz is intact, so there is no functional reason to disable it.

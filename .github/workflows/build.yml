@@ -7,6 +7,7 @@ on:
     paths:
       - '.github/workflows/build.yml'
       - '.github/scripts/**'
+      - 'rescue/**'
 
 jobs:
   build:
@@ -219,6 +220,12 @@ jobs:
           echo "=== gki_defconfig tail ==="
           tail -n 40 "$DEFCONFIG"
 
+      # trusty-rescue driver + kvm-arm.mode=nvhe CONFIG_CMDLINE bake (field-verified
+      # recipe from trusty-pop.kpm, 2026-10-03: 3 cameras + video OK under gz-erased
+      # nVHE; self-guarded no-op when gz intact). Applies to BOTH variants.
+      - name: Inject trusty-rescue driver + nvhe cmdline
+        run: bash "$GITHUB_WORKSPACE/.github/scripts/inject-rescue.sh"
+
       - name: Setup SukiSU Ultra builtin + KPM + SUSFS configs
         if: matrix.variant == 'ksu'
         run: |
@@ -353,6 +360,10 @@ jobs:
           grep -q "^CONFIG_CFI_CLANG=y$" /tmp/built-config || { echo "::error::CFI drifted from stock"; exit 1; }
           # WiFi/BT lifeline: protected-symbol gate must stay OFF (see defconfig step)
           grep -q "^# CONFIG_MODULE_SIG_PROTECT is not set" /tmp/built-config || { echo "::error::MODULE_SIG_PROTECT must be off (system_dlkm protected-symbol refusal)"; exit 1; }
+          # trusty-rescue bake assertions (silent kconfig drop class, see 09-12 lesson)
+          grep -q "^CONFIG_TRUSTY_RESCUE=y$" /tmp/built-config || { echo "::error::TRUSTY_RESCUE not built in (Kconfig hook dropped?)"; exit 1; }
+          grep -q 'kvm-arm.mode=nvhe' /tmp/built-config || { echo "::error::CONFIG_CMDLINE missing kvm-arm.mode=nvhe (cmdline bake failed)"; exit 1; }
+          if grep -q 'kvm-arm.mode=protected' /tmp/built-config; then echo "::error::kvm-arm.mode=protected still in built config"; exit 1; fi
           if [ "${{ matrix.variant }}" = "ksu" ]; then
             grep -q "^CONFIG_KSU=y$" /tmp/built-config || { echo "::error::KSU missing in ksu build"; exit 1; }
             grep -q "^CONFIG_KPM=y$" /tmp/built-config || { echo "::error::KPM missing in ksu build"; exit 1; }
